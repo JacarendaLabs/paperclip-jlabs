@@ -18,8 +18,8 @@ Run this Paperclip fork at `https://team.jacarendalabs.com`, reachable only afte
 | Decision | Choice | Why |
 |---|---|---|
 | Login wall | Extend Paperclip's own Better Auth | Paperclip owns per-user identity for boards, companies, budgets and audit. A proxy wall cannot supply that: it has no SSO or proxy-identity support (see Baseline). |
-| Hosting | Fly.io | Needs a long-lived process, a persistent volume and spawned agent CLIs, so Vercel is out. Fly issues Let's Encrypt certs, which the apex CAA already permits. |
-| Database | Embedded Postgres on the Fly volume now, a dedicated Supabase project later | Decided 2026-10-24. Sharing the website's database was rejected: `agents` collides (`supabase/migrations/20260504000008_agents_presence.sql:9` vs `packages/db/src/migrations/0000_mature_masked_marvel.sql`), the website's `create table if not exists` makes that collision silent in one direction, and a Paperclip credential in that database bypasses RLS on live business data while running autonomous agent CLIs. Same Supabase org, separate project. |
+| Hosting | ~~Fly.io~~ **DigitalOcean Droplet**, changed 2026-10-24 | Fly was wrong and was abandoned after two platform limits, see "Why Fly was abandoned". Droplet `jlabs-team`, `68.183.4.169`, ams3, s-4vcpu-8gb, Ubuntu 24.04, Docker plus Caddy. |
+| Database | ~~Embedded Postgres, Supabase later~~ **DigitalOcean Managed Postgres 17**, changed 2026-10-24 | Embedded Postgres turned out to be impossible here, see "The embedded Postgres refusal". Managed PG17 `jlabs-team-db` in ams3, private networking, firewalled to the Droplet alone, automated backups. Sharing the website's database was rejected: `agents` collides (`supabase/migrations/20260504000008_agents_presence.sql:9` vs `packages/db/src/migrations/0000_mature_masked_marvel.sql`), the website's `create table if not exists` makes that collision silent in one direction, and a Paperclip credential in that database bypasses RLS on live business data while running autonomous agent CLIs. Same Supabase org, separate project. |
 | Email transport | Resend over plain `fetch` | `resend._domainkey` is already verified on the apex. Calling the REST API directly adds zero dependencies, so `package.json` and `pnpm-lock.yaml` stay free of fork-only diffs. |
 
 # Verified baseline
@@ -64,6 +64,30 @@ The J Labs admin app at `admin.jacarendalabs.com` supplies a working reference f
 - DNS is on `ns1/ns2.vercel-dns.com`, team scope `jacarenda-labs`, so records are managed with `vercel dns` in that scope.
 - Apex CAA allows `pki.goog`, `sectigo.com` and `letsencrypt.org` only. Fly passes. AWS ACM would have failed until `amazon.com` was added, which is one reason ECS was not chosen.
 - Resend DKIM and a `send` MX for `feedback-smtp.eu-west-1.amazonses.com` are already live on the apex.
+
+# What actually happened on 2026-10-24
+
+Two platform facts cost about two hours. Both are recorded here because neither is in any document we read beforehand, and both would recur.
+
+## Why Fly was abandoned
+
+1. **Fly's managed GitHub deployer died silently.** It failed at 20:06:28 with `401 Unauthorized` fetching the org, and its dashboard kept the build step rendered as in-progress for another hour afterwards. Treating that page as a progress instrument was a mistake: a dead build and a stale stream look identical on it.
+2. **Building on Fly OOMs.** `fly deploy` died with `exit code: 137` during `pnpm install`. The builder ran out of memory on this monorepo.
+3. **The published image cannot run on Fly at all.** `ghcr.io/paperclipai/paperclip:latest` is 3.13 GB compressed across 14 layers (the top three are 1008, 941 and 934 MB). Fly enforces a hard **8 GB uncompressed** ceiling, which this clears, and the machine dies with `Not enough space to unpack image`.
+4. **`--rootfs-size` does not help.** It changes the writable overlay, not the unpack ceiling. A machine created with `--rootfs-size 20` failed with the identical error.
+5. **`fly deploy` could not express the workaround anyway.** `[[vm]]` accepts `size`, `memory`, `cpus`, `cpu_kind`, `kernel_args`, `host_dedication_id`, `persist_rootfs`, `processes`. There is no rootfs size key. Note that `fly config validate` **accepted an invented `rootfs_size` key**, so that check proves nothing: it ignores keys it does not know.
+
+## The embedded Postgres refusal
+
+With `PAPERCLIP_DEPLOYMENT_MODE=authenticated` and `PAPERCLIP_DEPLOYMENT_EXPOSURE=public`, the server refuses to start on the embedded database:
+
+```
+StartupRefusalError: authenticated public deployments require DATABASE_URL or
+config.database.connectionString; refusing embedded PostgreSQL fallback
+  at assertCloudDatabaseContract (/app/server/dist/index.js:201)
+```
+
+So "embedded Postgres for now, managed later" was never a reachable state for an internet-facing instance. `docs/deploy/database.md` presents the embedded database as the general default and does not mention this constraint. **Any plan that pairs a public deployment with the embedded database is invalid before it starts.**
 
 # Phases
 
