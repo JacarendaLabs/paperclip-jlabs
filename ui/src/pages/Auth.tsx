@@ -13,6 +13,7 @@ import { AsciiArtAnimation } from "@/components/AsciiArtAnimation";
 import { PaperclipLoading } from "@/components/AnimatedPaperclipIcon";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { PaperclipLockup } from "../components/PaperclipLockup";
+import { PasswordField } from "@/components/PasswordField";
 
 type AuthMode = "sign_in" | "sign_up";
 
@@ -171,11 +172,9 @@ export function AuthPage() {
             </div>
             <div>
               <label htmlFor="password" className="text-xs text-muted-foreground mb-1 block">Password</label>
-              <input
+              <PasswordField
                 id="password"
                 name="password"
-                className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground/50"
-                type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 autoComplete={mode === "sign_in" ? "current-password" : "new-password"}
