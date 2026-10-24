@@ -1,0 +1,52 @@
+# J Labs AI team (Paperclip fork) -> https://team.jacarendalabs.com
+# Fork-only file. Upstream ships no fly.toml, so this never conflicts on merge.
+# Plan: docs/jlabs/PLAN-team-login-wall.md
+
+app = 'paperclip-jlabs'
+primary_region = 'ams'
+
+[build]
+  dockerfile = 'Dockerfile'
+  target = 'production'
+
+[env]
+  # The image already sets HOST=0.0.0.0, PORT=3100, PAPERCLIP_HOME=/paperclip.
+  # These four are what turn the private default into the public login wall.
+  PAPERCLIP_DEPLOYMENT_MODE = 'authenticated'
+  PAPERCLIP_DEPLOYMENT_EXPOSURE = 'public'
+  PAPERCLIP_PUBLIC_URL = 'https://team.jacarendalabs.com'
+  PAPERCLIP_ALLOWED_HOSTNAMES = 'team.jacarendalabs.com'
+  # Flipped to 'true' only after the first account is created and the board is
+  # claimed. Phase 2, step 7 of the plan.
+  PAPERCLIP_AUTH_DISABLE_SIGN_UP = 'false'
+
+[http_service]
+  internal_port = 3100
+  force_https = true
+  # Stateful: holds the agent workspaces, the local secrets key and uploaded
+  # assets on a volume. Suspending it mid-run would kill in-flight agent work,
+  # so it stays up.
+  auto_stop_machines = 'off'
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = 'requests'
+    hard_limit = 250
+    soft_limit = 200
+
+[[http_service.checks]]
+  grace_period = '60s'
+  interval = '15s'
+  timeout = '5s'
+  method = 'GET'
+  path = '/api/health'
+
+[[mounts]]
+  source = 'paperclip_data'
+  destination = '/paperclip'
+  initial_size = '10gb'
+
+[[vm]]
+  size = 'performance-2x'
+  memory = '8gb'
